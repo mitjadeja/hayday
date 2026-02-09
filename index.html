@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hay Day Order Manager</title>
-
 <style>
 body{background:#0f172a;color:#e5e7eb;font-family:Arial;padding:10px}
-h1{text-align:center;margin-bottom:10px}
+h1{text-align:center}
 .card{background:#020617;border-radius:10px;padding:12px;margin-bottom:12px}
 input,textarea,button{width:100%;padding:10px;margin:6px 0;border-radius:6px;border:none;font-size:15px}
 button{background:#22c55e;font-weight:bold;cursor:pointer}
+button.danger{background:#ef4444;color:#fff}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{border-bottom:1px solid #334155;padding:6px;text-align:center}
 #popup,#historyPopup{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);padding:10px}
@@ -24,7 +24,7 @@ th,td{border-bottom:1px solid #334155;padding:6px;text-align:center}
 <h1>Hay Day Order Manager</h1>
 
 <div class="card">
-<input id="name" type="text" placeholder="Customer Name">
+<input id="name" placeholder="Customer Name">
 <textarea id="tags" rows="5" placeholder="Paste tags (one per line)"></textarea>
 <button id="addBtn" type="button">Add Order</button>
 </div>
@@ -59,149 +59,133 @@ th,td{border-bottom:1px solid #334155;padding:6px;text-align:center}
  <div class="popupBox">
   <h3>Completed History</h3>
   <div id="historyList"></div>
+  <button onclick="deleteAllHistory()" class="danger" type="button">Delete Complete History</button>
   <button onclick="closeHistory()" type="button">Close</button>
  </div>
 </div>
 
 <script>
-/* ===== CONFIG ===== */
-const SELL_PRICE = 4.5; // per 100 tags
-const COST_PRICE = 3;  // per 100 tags
+const SELL_PRICE=4.5;
+const COST_PRICE=3;
 
-/* ===== STORAGE ===== */
-let orders = JSON.parse(localStorage.getItem("orders") || "[]");
-let history = JSON.parse(localStorage.getItem("history") || "[]");
-let currentTags = "";
+const nameInput = document.getElementById("name");
+const tagsInput = document.getElementById("tags");
+const addBtn = document.getElementById("addBtn");
+const historyBtn = document.getElementById("historyBtn");
+const list = document.getElementById("list");
+const stats = document.getElementById("stats");
+const popup = document.getElementById("popup");
+const popupTags = document.getElementById("popupTags");
+const historyPopup = document.getElementById("historyPopup");
+const historyList = document.getElementById("historyList");
+const copyBtn = document.getElementById("copyBtn");
 
-/* ===== HELPERS ===== */
-function today(){
-  return new Date().toISOString().slice(0,10);
-}
+let orders=JSON.parse(localStorage.getItem("orders")||"[]");
+let history=JSON.parse(localStorage.getItem("history")||"[]");
+let currentTags="";
 
-/* ===== CORE FUNCTIONS ===== */
+function today(){return new Date().toISOString().slice(0,10);}
+
 function addOrder(){
-  const nameEl = document.getElementById("name");
-  const tagsEl = document.getElementById("tags");
-
-  const name = nameEl.value.trim();
-  const tagsText = tagsEl.value.trim();
-
-  if(!name || !tagsText){
-    alert("Enter customer name and tags");
-    return;
-  }
-
-  const tags = tagsText.split(/\r?\n/).map(t=>t.trim()).filter(Boolean);
-
-  orders.push({ name, tags, time: Date.now() });
-  saveAll();
-  nameEl.value="";
-  tagsEl.value="";
-  render();
+ const n=nameInput.value.trim(), t=tagsInput.value.trim();
+ if(!n||!t){alert("Enter name & tags");return;}
+ const arr=t.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ orders.push({name:n,tags:arr});
+ save(); render();
+ nameInput.value=""; tagsInput.value="";
 }
 
 function render(){
-  const tbody = document.getElementById("list");
-  let html = "";
-  orders.forEach((o,i)=>{
-    html += `
-    <tr>
-      <td>${i+1}</td>
-      <td>${o.name}</td>
-      <td>${o.tags.length}</td>
-      <td><button type="button" onclick="viewOrder(${i})">View</button></td>
-      <td><button type="button" onclick="completeOrder(${i})">Done</button></td>
-    </tr>`;
-  });
-  tbody.innerHTML = html;
-  renderStats();
+ let html="";
+ orders.forEach((o,i)=>{
+  html+=`<tr>
+   <td>${i+1}</td>
+   <td>${o.name}</td>
+   <td>${o.tags.length}</td>
+   <td><button onclick="view(${i})">View</button></td>
+   <td><button onclick="done(${i})">Done</button></td>
+  </tr>`;
+ });
+ list.innerHTML=html;
+ renderStats();
 }
 
-function viewOrder(i){
-  currentTags = orders[i].tags.join("\n");
-  document.getElementById("popupTags").value = currentTags;
-  document.getElementById("popup").style.display = "block";
+function view(i){
+ currentTags=orders[i].tags.join("\n");
+ popupTags.value=currentTags;
+ popup.style.display="block";
 }
-
-function closePopup(){
-  document.getElementById("popup").style.display = "none";
-}
-
+function closePopup(){popup.style.display="none";}
 function copyTags(){
-  const ta = document.getElementById("popupTags");
-  ta.focus();
-  ta.select();
-  ta.setSelectionRange(0, 999999);
-  document.execCommand("copy");
-  alert("Tags copied");
+ popupTags.select();
+ document.execCommand("copy");
+ alert("Copied");
 }
 
-function completeOrder(i){
-  if(!confirm("Mark this order as completed?")) return;
-  const o = orders[i];
-  history.push({
-    date: today(),
-    name: o.name,
-    tags: o.tags
-  });
-  orders.splice(i,1);
-  saveAll();
-  render();
+function done(i){
+ if(!confirm("Mark this order as completed?"))return;
+ const o=orders[i];
+ history.push({date:today(),name:o.name,tags:o.tags});
+ orders.splice(i,1);
+ save(); render();
 }
 
 function renderStats(){
-  const d = today();
-  let dayTags = 0, monthTags = 0, yearTags = 0;
-
-  history.forEach(h=>{
-    const t = h.tags.length;
-    if(h.date === d) dayTags += t;
-    monthTags += t;
-    yearTags += t;
-  });
-
-  function profit(tags){
-    const sell = (tags/100)*SELL_PRICE;
-    const cost = (tags/100)*COST_PRICE;
-    return (sell-cost).toFixed(2);
-  }
-
-  document.getElementById("stats").innerHTML = `
-    <div class="stat"><b>Today:</b> ${dayTags} tags | Profit ${profit(dayTags)} USDT</div>
-    <div class="stat"><b>Total:</b> ${monthTags} tags | Profit ${profit(monthTags)} USDT</div>
-    <div class="stat"><b>Year:</b> ${yearTags} tags | Profit ${profit(yearTags)} USDT</div>
-  `;
+ let d=today();
+ let day=0,total=0,year=0;
+ history.forEach(h=>{
+  let t=h.tags.length;
+  if(h.date==d)day+=t;
+  total+=t; year+=t;
+ });
+ function profit(tags){
+  return (((tags/100)*SELL_PRICE)-((tags/100)*COST_PRICE)).toFixed(2);
+ }
+ stats.innerHTML=`
+ <div class="stat"><b>Today:</b> ${day} tags | Profit ${profit(day)} USDT</div>
+ <div class="stat"><b>Total:</b> ${total} tags | Profit ${profit(total)} USDT</div>
+ <div class="stat"><b>Year:</b> ${year} tags | Profit ${profit(year)} USDT</div>
+ `;
 }
 
 function openHistory(){
-  const box = document.getElementById("historyList");
-  let html = "";
-  history.forEach(h=>{
-    html += `
-    <div class="card">
-      <b>${h.date} - ${h.name}</b>
-      <textarea rows="4">${h.tags.join("\n")}</textarea>
-    </div>`;
-  });
-  box.innerHTML = html || "No history yet";
-  document.getElementById("historyPopup").style.display = "block";
+ let html="";
+ history.forEach((h,i)=>{
+  html+=`
+  <div class="card">
+   <b>${h.date} - ${h.name}</b>
+   <textarea rows="4">${h.tags.join("\n")}</textarea>
+   <button class="danger" onclick="deleteOneHistory(${i})">Delete This</button>
+  </div>`;
+ });
+ historyList.innerHTML=html||"No history yet";
+ historyPopup.style.display="block";
+}
+function closeHistory(){historyPopup.style.display="none";}
+
+function deleteOneHistory(i){
+ if(confirm("Delete this completed order permanently?")){
+  history.splice(i,1);
+  save(); openHistory();
+ }
+}
+function deleteAllHistory(){
+ if(confirm("Delete ALL completed history permanently?")){
+  history=[];
+  save(); openHistory();
+ }
 }
 
-function closeHistory(){
-  document.getElementById("historyPopup").style.display = "none";
+function save(){
+ localStorage.setItem("orders",JSON.stringify(orders));
+ localStorage.setItem("history",JSON.stringify(history));
 }
 
-function saveAll(){
-  localStorage.setItem("orders", JSON.stringify(orders));
-  localStorage.setItem("history", JSON.stringify(history));
-}
-
-/* ===== EVENT BINDING (SAFE) ===== */
-document.addEventListener("DOMContentLoaded", function(){
-  document.getElementById("addBtn").addEventListener("click", addOrder);
-  document.getElementById("historyBtn").addEventListener("click", openHistory);
-  document.getElementById("copyBtn").addEventListener("click", copyTags);
-  render();
+document.addEventListener("DOMContentLoaded",()=>{
+ addBtn.onclick=addOrder;
+ historyBtn.onclick=openHistory;
+ copyBtn.onclick=copyTags;
+ render();
 });
 </script>
 
