@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hay Day Order Manager</title>
+
 <style>
 body{background:#0f172a;color:#e5e7eb;font-family:Arial;padding:10px}
 h1{text-align:center}
@@ -64,41 +65,87 @@ th,td{border-bottom:1px solid #334155;padding:6px;text-align:center}
  </div>
 </div>
 
-<script>
+<!-- ================= FIREBASE + APP LOGIC ================= -->
+<script type="module">
+/* ================= FIREBASE SETUP ================= */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+import {
+  getFirestore, collection, addDoc, getDocs, deleteDoc, doc
+} from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDFymz_wZqg0UnE2ShLsUSvdjG9uUU2N6w",
+  authDomain: "hayday-pro-manager.firebaseapp.com",
+  projectId: "hayday-pro-manager",
+  storageBucket: "hayday-pro-manager.firebasestorage.app",
+  messagingSenderId: "489161017568",
+  appId: "1:489161017568:web:8891f53c74b4607e6ea885"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+/* ================= CONSTANTS ================= */
 const SELL_PRICE=4.5;
 const COST_PRICE=3;
 
-const nameInput = document.getElementById("name");
-const tagsInput = document.getElementById("tags");
-const addBtn = document.getElementById("addBtn");
-const historyBtn = document.getElementById("historyBtn");
-const list = document.getElementById("list");
-const stats = document.getElementById("stats");
-const popup = document.getElementById("popup");
-const popupTags = document.getElementById("popupTags");
-const historyPopup = document.getElementById("historyPopup");
-const historyList = document.getElementById("historyList");
-const copyBtn = document.getElementById("copyBtn");
+/* ================= ELEMENTS ================= */
+const nameInput=document.getElementById("name");
+const tagsInput=document.getElementById("tags");
+const addBtn=document.getElementById("addBtn");
+const historyBtn=document.getElementById("historyBtn");
+const list=document.getElementById("list");
+const stats=document.getElementById("stats");
+const popup=document.getElementById("popup");
+const popupTags=document.getElementById("popupTags");
+const historyPopup=document.getElementById("historyPopup");
+const historyList=document.getElementById("historyList");
+const copyBtn=document.getElementById("copyBtn");
 
-let orders=JSON.parse(localStorage.getItem("orders")||"[]");
-let history=JSON.parse(localStorage.getItem("history")||"[]");
+/* ================= DATA ================= */
+let orders=[];
+let history=[];
 let currentTags="";
 
+/* ================= HELPERS ================= */
 function today(){return new Date().toISOString().slice(0,10);}
 
+/* ================= FIREBASE FUNCTIONS ================= */
+async function saveOrder(order){
+  await addDoc(collection(db,"orders"),order);
+}
+async function saveHistory(item){
+  await addDoc(collection(db,"history"),item);
+}
+async function loadOrders(){
+  const snap=await getDocs(collection(db,"orders"));
+  return snap.docs.map(d=>({id:d.id,...d.data()}));
+}
+async function loadHistory(){
+  const snap=await getDocs(collection(db,"history"));
+  return snap.docs.map(d=>({id:d.id,...d.data()}));
+}
+async function deleteFirebase(col,id){
+  await deleteDoc(doc(db,col,id));
+}
+
+/* ================= APP LOGIC ================= */
 function addOrder(){
  const n=nameInput.value.trim(), t=tagsInput.value.trim();
  if(!n||!t){alert("Enter name & tags");return;}
  const arr=t.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
- orders.push({name:n,tags:arr});
- save(); render();
+ const obj={name:n,tags:arr};
+ orders.push(obj);
+ saveOrder(obj);
+ render();
  nameInput.value=""; tagsInput.value="";
 }
 
 function render(){
  let html="";
  orders.forEach((o,i)=>{
-  html+=`<tr>
+  html+=`
+  <tr>
    <td>${i+1}</td>
    <td>${o.name}</td>
    <td>${o.tags.length}</td>
@@ -110,81 +157,83 @@ function render(){
  renderStats();
 }
 
-function view(i){
- currentTags=orders[i].tags.join("\n");
- popupTags.value=currentTags;
+window.view=function(i){
+ popupTags.value=orders[i].tags.join("\n");
  popup.style.display="block";
 }
-function closePopup(){popup.style.display="none";}
-function copyTags(){
+window.closePopup=()=>popup.style.display="none";
+window.copyTags=()=>{
  popupTags.select();
  document.execCommand("copy");
  alert("Copied");
 }
 
-function done(i){
+window.done=async function(i){
  if(!confirm("Mark this order as completed?"))return;
  const o=orders[i];
- history.push({date:today(),name:o.name,tags:o.tags});
+ const h={date:today(),name:o.name,tags:o.tags};
+ history.push(h);
+ await saveHistory(h);
+ if(o.id) await deleteFirebase("orders",o.id);
  orders.splice(i,1);
- save(); render();
+ render();
 }
 
 function renderStats(){
- let d=today();
- let day=0,total=0,year=0;
+ let d=today(),day=0,total=0;
  history.forEach(h=>{
   let t=h.tags.length;
-  if(h.date==d)day+=t;
-  total+=t; year+=t;
+  if(h.date===d)day+=t;
+  total+=t;
  });
- function profit(tags){
-  return (((tags/100)*SELL_PRICE)-((tags/100)*COST_PRICE)).toFixed(2);
- }
+ const profit=t=>(((t/100)*SELL_PRICE)-((t/100)*COST_PRICE)).toFixed(2);
  stats.innerHTML=`
  <div class="stat"><b>Today:</b> ${day} tags | Profit ${profit(day)} USDT</div>
- <div class="stat"><b>Total:</b> ${total} tags | Profit ${profit(total)} USDT</div>
- <div class="stat"><b>Year:</b> ${year} tags | Profit ${profit(year)} USDT</div>
- `;
+ <div class="stat"><b>Total:</b> ${total} tags | Profit ${profit(total)} USDT</div>`;
 }
 
-function openHistory(){
+window.openHistory=function(){
  let html="";
  history.forEach((h,i)=>{
   html+=`
   <div class="card">
    <b>${h.date} - ${h.name}</b>
    <textarea rows="4">${h.tags.join("\n")}</textarea>
-   <button class="danger" onclick="deleteOneHistory(${i})">Delete This</button>
+   <button class="danger" onclick="deleteOneHistory(${i})">Delete</button>
   </div>`;
  });
  historyList.innerHTML=html||"No history yet";
  historyPopup.style.display="block";
 }
-function closeHistory(){historyPopup.style.display="none";}
+window.closeHistory=()=>historyPopup.style.display="none";
 
-function deleteOneHistory(i){
+window.deleteOneHistory=async function(i){
  if(confirm("Delete this completed order permanently?")){
+  const h=history[i];
+  if(h.id) await deleteFirebase("history",h.id);
   history.splice(i,1);
-  save(); openHistory();
+  openHistory();
  }
 }
-function deleteAllHistory(){
+
+window.deleteAllHistory=async function(){
  if(confirm("Delete ALL completed history permanently?")){
+  for(const h of history){
+   if(h.id) await deleteFirebase("history",h.id);
+  }
   history=[];
-  save(); openHistory();
+  openHistory();
  }
 }
 
-function save(){
- localStorage.setItem("orders",JSON.stringify(orders));
- localStorage.setItem("history",JSON.stringify(history));
-}
-
-document.addEventListener("DOMContentLoaded",()=>{
+/* ================= INIT ================= */
+document.addEventListener("DOMContentLoaded",async()=>{
  addBtn.onclick=addOrder;
  historyBtn.onclick=openHistory;
  copyBtn.onclick=copyTags;
+
+ orders=await loadOrders();
+ history=await loadHistory();
  render();
 });
 </script>
